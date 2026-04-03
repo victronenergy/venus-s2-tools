@@ -1,4 +1,4 @@
-# s2_cem_cli
+# Venus S2 Tools
 
 Interactive command line tools for Victron S2 over D-Bus communication.
 
