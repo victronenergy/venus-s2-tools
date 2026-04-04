@@ -127,6 +127,43 @@ class S2Sniffer:
                 self._handle_name_owner_changed(str(name), str(old_owner), str(new_owner))
                 return False
 
+            # Handle Connect/Disconnect method calls and Disconnect signals
+            if message.path == RM_PATH and message.interface == S2_IFACE:
+                if message.member == "Connect":
+                    if message.message_type == self.MessageType.METHOD_CALL:
+                        try:
+                            cem_id = str(message.body[0]) if message.body else "<unknown>"
+                            keep_alive_interval = int(message.body[1]) if len(message.body) > 1 else None
+                        except Exception:
+                            cem_id = "<unknown>"
+                            keep_alive_interval = None
+                        direction = "CEM_TO_RM"
+                        rm_service = self.resolve_service_name(message.destination)
+                        self._print_connection_event("CONNECT", direction, cem_id, rm_service, keep_alive_interval=keep_alive_interval)
+                        return True
+
+                elif message.member == "Disconnect":
+                    if message.message_type == self.MessageType.METHOD_CALL:
+                        try:
+                            cem_id = str(message.body[0]) if message.body else "<unknown>"
+                        except Exception:
+                            cem_id = "<unknown>"
+                        direction = "CEM_TO_RM"
+                        rm_service = self.resolve_service_name(message.destination)
+                        self._print_connection_event("DISCONNECT_REQUEST", direction, cem_id, rm_service)
+                        return True
+                    elif message.message_type == self.MessageType.SIGNAL:
+                        try:
+                            cem_id = str(message.body[0]) if message.body else "<unknown>"
+                            reason = str(message.body[1]) if len(message.body) > 1 else None
+                        except Exception:
+                            cem_id = "<unknown>"
+                            reason = None
+                        direction = "RM_TO_CEM"
+                        rm_service = self.resolve_service_name(message.sender)
+                        self._print_connection_event("DISCONNECT", direction, cem_id, rm_service, reason=reason)
+                        return True
+
             if message.path != RM_PATH or message.interface != S2_IFACE or message.member != "Message":
                 return False
 
@@ -190,6 +227,27 @@ class S2Sniffer:
                 f"path='{RM_PATH}',"
                 "eavesdrop='true',"
                 "member='Message'"
+            ),
+            (
+                "type='method_call',"
+                f"interface='{S2_IFACE}',"
+                f"path='{RM_PATH}',"
+                "eavesdrop='true',"
+                "member='Connect'"
+            ),
+            (
+                "type='method_call',"
+                f"interface='{S2_IFACE}',"
+                f"path='{RM_PATH}',"
+                "eavesdrop='true',"
+                "member='Disconnect'"
+            ),
+            (
+                "type='signal',"
+                f"interface='{S2_IFACE}',"
+                f"path='{RM_PATH}',"
+                "eavesdrop='true',"
+                "member='Disconnect'"
             ),
             (
                 "type='signal',"
@@ -288,6 +346,46 @@ class S2Sniffer:
         if service.startswith(VIC_PREFIX):
             return service[len(VIC_PREFIX):]
         return service
+
+    def _print_connection_event(
+        self,
+        event_type: str,
+        direction: str,
+        cem_id: str,
+        rm_service: str,
+        keep_alive_interval: Optional[int] = None,
+        reason: Optional[str] = None,
+    ) -> None:
+        """Print Connect/Disconnect events."""
+        self._message_count += 1
+        if self.count is not None and self._message_count > self.count:
+            self._closed = True
+            return
+
+        timestamp = utc_now().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+        rm_display = self.strip_service_name(rm_service)
+
+        if direction == "CEM_TO_RM":
+            left, right = cem_id, rm_display
+        else:
+            left, right = rm_display, cem_id
+
+        if event_type == "CONNECT":
+            extra = f" (keep_alive_interval={keep_alive_interval}s)" if keep_alive_interval else ""
+            event_msg = f"{timestamp} | '{left}' -> '{right}' | CONNECT{extra}"
+        elif event_type == "DISCONNECT":
+            extra = f" (reason: {reason})" if reason else ""
+            event_msg = f"{timestamp} | '{left}' -> '{right}' | DISCONNECT (confirmed){extra}"
+        elif event_type == "DISCONNECT_REQUEST":
+            event_msg = f"{timestamp} | '{left}' -> '{right}' | DISCONNECT (requested)"
+        else:
+            event_msg = f"{timestamp} | '{left}' -> '{right}' | {event_type}"
+
+        if self._full_log_handle is not None:
+            self._full_log_handle.write(f"{event_msg}\n")
+            self._full_log_handle.flush()
+
+        print(event_msg)
 
     def _print_message(self, direction: str, cem_id: str, rm_service: str, raw_payload: Any) -> None:
         self._message_count += 1
