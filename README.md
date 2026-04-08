@@ -2,7 +2,7 @@
 
 Command line tools for Victron S2 over D-Bus communication.
 
-## s2_cem_cli.py
+## s2-cem-cli.py
 
 Interactive command line tool to connect to S2 Resource Manager using Victron S2 over D-Bus communication.
 
@@ -30,13 +30,13 @@ Interactive command line tool to connect to S2 Resource Manager using Victron S2
 ### Run
 
 ```bash
-python3 s2_cem_cli.py
+python3 s2-cem-cli.py
 ```
 
 Optional flags:
 
 ```bash
-python3 s2_cem_cli.py --dbus system --filter evcharger --verbose
+python3 s2-cem-cli.py --dbus system --filter evcharger --verbose
 ```
 
 ### Notes
@@ -47,7 +47,7 @@ python3 s2_cem_cli.py --dbus system --filter evcharger --verbose
 
 ---
 
-## s2_sniffer.py
+## s2-sniffer.py
 
 Passive listener for all S2 messages on D-Bus. Useful for debugging and monitoring S2 protocol traffic without connecting to a service.
 
@@ -64,15 +64,15 @@ Passive listener for all S2 messages on D-Bus. Useful for debugging and monitori
 ### Run
 
 ```bash
-python3 s2_sniffer.py
+python3 s2-sniffer.py
 ```
 
 Optional flags:
 
 ```bash
-python3 s2_sniffer.py --service cem --hide-reception-status --hide-power-measurement
-python3 s2_sniffer.py --message-type OMBC --full-log-file messages.log
-python3 s2_sniffer.py --dbus session --max-preview-lines 0  # Unlimited JSON per message
+python3 s2-sniffer.py --service cem --hide-reception-status --hide-power-measurement
+python3 s2-sniffer.py --message-type OMBC --full-log-file messages.log
+python3 s2-sniffer.py --dbus session --max-preview-lines 0  # Unlimited JSON per message
 ```
 
 ### Notes
