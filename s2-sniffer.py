@@ -70,6 +70,7 @@ class S2Sniffer:
         message_type_filter: Optional[str] = None,
         hide_reception_status: bool = False,
         hide_power_measurement: bool = False,
+        hide_keep_alive: bool = False,
         max_preview_lines: int = 40,
         full_log_file: Optional[str] = None,
         verbose: bool = False,
@@ -82,6 +83,7 @@ class S2Sniffer:
         self.message_type_filter = message_type_filter
         self.hide_reception_status = hide_reception_status
         self.hide_power_measurement = hide_power_measurement
+        self.hide_keep_alive = hide_keep_alive
         self.max_preview_lines = max_preview_lines
         self.full_log_file = full_log_file
         self.verbose = verbose
@@ -94,6 +96,8 @@ class S2Sniffer:
         self._closed = False
         self._owner_to_service: dict[str, str] = {}
         self._full_log_handle: Optional[Any] = None
+        # serial -> (cem_id, rm_service) for in-flight KeepAlive calls
+        self._pending_keepalives: dict[int, tuple[str, str]] = {}
 
     async def __aenter__(self) -> "S2Sniffer":
         self.install_handler()
@@ -163,6 +167,43 @@ class S2Sniffer:
                         rm_service = self.resolve_service_name(message.sender)
                         self._print_connection_event("DISCONNECT", direction, cem_id, rm_service, reason=reason)
                         return True
+
+                elif message.member == "KeepAlive":
+                    if message.message_type == self.MessageType.METHOD_CALL:
+                        try:
+                            cem_id = str(message.body[0]) if message.body else "<unknown>"
+                        except Exception:
+                            cem_id = "<unknown>"
+                        rm_service = self.resolve_service_name(message.destination)
+                        try:
+                            serial = int(message.serial)
+                            self._pending_keepalives[serial] = (cem_id, rm_service)
+                        except Exception:
+                            pass
+                        if not self.hide_keep_alive:
+                            self._print_connection_event("KEEP_ALIVE", "CEM_TO_RM", cem_id, rm_service)
+                        return True
+
+            # KeepAlive reply: METHOD_RETURN from RM back to CEM
+            if (
+                message.message_type == self.MessageType.METHOD_RETURN
+                and message.reply_serial is not None
+            ):
+                pending = self._pending_keepalives.pop(int(message.reply_serial), None)
+                if pending is not None:
+                    cem_id, rm_service = pending
+                    if not self.hide_keep_alive:
+                        try:
+                            accepted = bool(message.body[0]) if message.body else True
+                        except Exception:
+                            accepted = True
+                        self._print_connection_event(
+                            "KEEP_ALIVE_OK" if accepted else "KEEP_ALIVE_REJECTED",
+                            "RM_TO_CEM",
+                            cem_id,
+                            rm_service,
+                        )
+                    return True
 
             if message.path != RM_PATH or message.interface != S2_IFACE or message.member != "Message":
                 return False
@@ -248,6 +289,17 @@ class S2Sniffer:
                 f"path='{RM_PATH}',"
                 "eavesdrop='true',"
                 "member='Disconnect'"
+            ),
+            (
+                "type='method_call',"
+                f"interface='{S2_IFACE}',"
+                f"path='{RM_PATH}',"
+                "eavesdrop='true',"
+                "member='KeepAlive'"
+            ),
+            (
+                "type='method_return',"
+                "eavesdrop='true'"
             ),
             (
                 "type='signal',"
@@ -378,6 +430,12 @@ class S2Sniffer:
             event_msg = f"{timestamp} | '{left}' -> '{right}' | DISCONNECT (confirmed){extra}"
         elif event_type == "DISCONNECT_REQUEST":
             event_msg = f"{timestamp} | '{left}' -> '{right}' | DISCONNECT (requested)"
+        elif event_type == "KEEP_ALIVE":
+            event_msg = f"{timestamp} | '{left}' -> '{right}' | KEEP_ALIVE"
+        elif event_type == "KEEP_ALIVE_OK":
+            event_msg = f"{timestamp} | '{left}' -> '{right}' | KEEP_ALIVE (ok)"
+        elif event_type == "KEEP_ALIVE_REJECTED":
+            event_msg = f"{timestamp} | '{left}' -> '{right}' | KEEP_ALIVE (rejected)"
         else:
             event_msg = f"{timestamp} | '{left}' -> '{right}' | {event_type}"
 
@@ -459,6 +517,8 @@ class S2Sniffer:
             print("  Hiding ReceptionStatus", file=sys.stderr)
         if self.hide_power_measurement:
             print("  Hiding PowerMeasurement", file=sys.stderr)
+        if self.hide_keep_alive:
+            print("  Hiding KeepAlive", file=sys.stderr)
         if self.max_preview_lines > 0:
             print(f"  Max preview lines: {self.max_preview_lines}", file=sys.stderr)
         else:
@@ -494,6 +554,7 @@ async def async_main(args: argparse.Namespace) -> int:
         message_type_filter=args.message_type,
         hide_reception_status=args.hide_reception_status,
         hide_power_measurement=args.hide_power_measurement,
+        hide_keep_alive=args.hide_keep_alive,
         max_preview_lines=args.max_preview_lines,
         full_log_file=args.full_log_file,
         verbose=args.verbose,
@@ -518,6 +579,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--hide-power-measurement",
         action="store_true",
         help="Hide S2 messages where message_type is PowerMeasurement.",
+    )
+    parser.add_argument(
+        "--hide-keep-alive",
+        action="store_true",
+        help="Hide KeepAlive method calls.",
     )
     parser.add_argument(
         "--max-preview-lines",
