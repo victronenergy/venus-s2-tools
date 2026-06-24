@@ -77,12 +77,14 @@ def load_dbus():
     try:
         from dbus_fast import BusType, Message, MessageType
         from dbus_fast.aio import MessageBus
-        return BusType, Message, MessageType, MessageBus
+        from dbus_fast.auth import AuthAnonymous
+        return BusType, Message, MessageType, MessageBus, AuthAnonymous
     except ImportError:
         try:
-            from dbus_next import BusType, Message, MessageType
+            from dbus_next import BusType, Message, MessageType, AuthAnonymous
             from dbus_next.aio import MessageBus
-            return BusType, Message, MessageType, MessageBus
+            from dbus_next.auth import AuthAnonymous
+            return BusType, Message, MessageType, MessageBus, AuthAnonymous
         except ImportError as exc:
             raise S2CliError(
                 "Neither dbus-fast nor dbus-next is available. Install one of them on the target system."
@@ -1166,9 +1168,10 @@ async def run_service_session(
 
 
 async def async_main(args: argparse.Namespace) -> int:
-    BusType, Message, MessageType, MessageBus = load_dbus()
+    BusType, Message, MessageType, MessageBus, AuthAnonymous = load_dbus()
     bus_type = BusType.SYSTEM if args.dbus == "system" else BusType.SESSION
-    bus = await MessageBus(bus_type=bus_type).connect()
+    auth = AuthAnonymous() if args.auth == "anonymous" else None
+    bus = await MessageBus(bus_type=bus_type, auth=auth).connect()
 
     print("Collecting services ...")
     while True:
@@ -1206,6 +1209,7 @@ async def async_main(args: argparse.Namespace) -> int:
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dbus", choices=("system", "session"), default="system", help="Which D-Bus to use.")
+    parser.add_argument("--auth", choices=("external", "anonymous"), default="external", help="Which D-Bus auth method to use.")
     parser.add_argument("--filter", default=None, help="Case-insensitive substring filter for service names.")
     parser.add_argument("--client-id", default=DEFAULT_CLIENT_ID, help="S2 client id for Connect/Message calls.")
     parser.add_argument("--keepalive", type=int, default=DEFAULT_KEEPALIVE_S, help="KeepAlive interval in seconds.")

@@ -1,0 +1,3 @@
+dbus-fast
+s2-python[ws] == 0.8.1
+git+https://github.com/victronenergy/aiovelib.git@70c9a31d8570039a57e6feb87b3efa9a0daa71f3

@@ -2,6 +2,13 @@
 
 Command line tools for Victron S2 over D-Bus communication.
 
+1. `s2-cem-cli.py` - Interactive command line tool to connect to S2 Resource Manager using Victron S2 over D-Bus communication.
+1. `s2-sniffer.py` - Passive listener for all S2 messages on D-Bus.
+1. `s2-dbus-ws-bridge.py` - Bridge between Victron S2 over D-Bus and S2 over WebSocket.
+1. `dbus-spy` - Debug tool to inspect all Victron D-Bus services.
+
+A docker image can be built with the tools included + either a D-Bus bus running or connecting to the bus of a GX device.
+
 ## s2-cem-cli.py
 
 Interactive command line tool to connect to S2 Resource Manager using Victron S2 over D-Bus communication.
@@ -79,3 +86,74 @@ python3 s2-sniffer.py --dbus session --max-preview-lines 0  # Unlimited JSON per
 
 - Useful for protocol debugging and analysis without modifying system state.
 - Requires D-Bus eavesdropping support (may require system policy configuration on some systems).
+
+## s2-dbus-ws-bridge.py
+
+Bridge between Victron S2 over D-Bus and S2 over WebSocket.
+
+### What it does
+
+- Create a D-Bus service with the `/S2/0/Rm` path
+- Create a WebSocket server
+- Forward messages between the D-Bus service and a WebSocket connection
+- Log all messages with their direction
+
+### Run
+
+```bash
+python3 s2-dbus-ws-bridge.py
+```
+
+Optional arguments:  
+```bash
+--dbus session|system
+--auth anonymous|external
+--port 1234
+```
+
+## Docker
+
+### Build the docker image
+
+```bash
+docker build -t venus-s2-tools-image .
+```
+
+### Run the docker image with its own dbus
+
+```bash
+docker run -it --rm --name venus-s2-tools -p 8765:8765 venus-s2-tools-image
+```
+
+Port 8765 is forwarded to 8765 on the host, to be used with `s2-dbus-ws-bridge.py`.
+Adjust if you need a different port.
+
+Run tools with:  
+```bash
+./s2-cem-cli.py ...
+./s2-sniffer.py ...
+./s2-dbus-ws-bridge.py ...
+dbus-spy
+```
+
+### Run the docker image with a tunnel to a GX device
+
+In the GX's settings, set `com.victronenergy.settings/Settings/Services/InsecureDbusOverTcp` to `1`.
+
+```bash
+docker run -it --rm --name venus-s2-tools -p 8765:8765 -e DBUS_SYSTEM_BUS_ADDRESS="tcp:host=<gx_ip>,port=78" venus-s2-tools-image
+```
+
+Run tools with:
+```bash
+./s2-cem-cli.py --auth anonymous ...
+./s2-sniffer.py --auth anonymous ...
+./s2-dbus-ws-bridge.py --auth anonymous ...
+dbus-spy
+```
+
+### Opening another shell
+
+```bash
+docker exec -it venus-s2-tools bash
+```
